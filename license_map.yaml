@@ -103,6 +103,3 @@ bsd:
         - debian
         - ext_libs
         - license_map.yaml
-        - kernel/mstflint_kernel.spec
-
-

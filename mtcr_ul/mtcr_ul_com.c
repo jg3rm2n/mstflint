@@ -89,8 +89,7 @@
 #include "packets_layout.h"
 #include "mtcr_tools_cif.h"
 #include "mtcr_icmd_cif.h"
-
-#include "kernel/mst.h"
+#include "nnt_ioctl_defs.h"
 
 #define CX3_SW_ID    4099
 #define CX3PRO_SW_ID 4103
@@ -322,14 +321,14 @@ int mtcr_check_signature(mfile *mf)
 int mst_driver_vpd_read4(mfile *mf, unsigned int offset, u_int8_t value[])
 {
     int flag = 0;
-    struct mst_vpd_read4_st read_vpd4;
+    struct nnt_vpd read_vpd4;
     if (mf->tp != MST_PCICONF) {
         mpci_change_ul(mf);
         flag = 1;
     }
     memset(&read_vpd4, 0, sizeof(read_vpd4));
     read_vpd4.offset = offset;
-    int ret = ioctl(mf->fd, PCICONF_VPD_READ4, &read_vpd4);
+    int ret = ioctl(mf->fd, NNT_VPD_READ, &read_vpd4);
     if (ret < 0) {
         return ret;
     }
@@ -682,14 +681,15 @@ enum {
 int mtcr_driver_mread4(mfile *mf, unsigned int offset, u_int32_t *value)
 {
     int rc = 4;
-    struct mst_read4_st r4;
-    memset(&r4, 0, sizeof(struct mst_read4_st));
+    struct rw_operation r4;
+    memset(&r4, 0, sizeof(struct rw_operation));
     r4.address_space = (unsigned int)mf->address_space;
     r4.offset = offset;
-    if ((ioctl(mf->fd, PCICONF_READ4, &r4)) < 0) {
+    r4.size = 4;
+    if ((ioctl(mf->fd, NNT_READ, &r4)) < 0) {
         rc = -1;
     } else {
-        *value = r4.data;
+        *value = r4.data[0];
     }
 
     return rc;
@@ -698,13 +698,13 @@ int mtcr_driver_mread4(mfile *mf, unsigned int offset, u_int32_t *value)
 int mtcr_driver_mwrite4(mfile *mf, unsigned int offset, u_int32_t value)
 {
     int rc = 4;
-    struct mst_write4_st r4;
-    memset(&r4, 0, sizeof(struct mst_write4_st));
-
+    struct rw_operation r4;
+    memset(&r4, 0, sizeof(struct rw_operation));
+    r4.size = 4;
     r4.offset = offset;
-    r4.data = value;
+    r4.data[0] = value;
     r4.address_space = (unsigned int)mf->address_space;
-    if (ioctl(mf->fd, PCICONF_WRITE4, &r4) < 0) {
+    if (ioctl(mf->fd, NNT_WRITE, &r4) < 0) {
         rc = -1;
     } else {
         rc = 4;
@@ -783,13 +783,14 @@ static int driver_mwrite4_block(mfile *mf, unsigned int offset, u_int32_t *data,
         for (left_size = length; left_size > 0; left_size -= PCICONF_MAX_BUFFER_SIZE) {
             int towrite;
             towrite = (left_size >= PCICONF_MAX_BUFFER_SIZE) ? PCICONF_MAX_BUFFER_SIZE : left_size;
-            struct mst_write4_buffer_st write4_buf;
+
+            struct rw_operation write4_buf;
             memset(&write4_buf, 0, sizeof(write4_buf));
             write4_buf.address_space = (unsigned int)mf->address_space;
             write4_buf.offset = offset;
             write4_buf.size = towrite;
             memcpy(write4_buf.data, dest_ptr, towrite);
-            int ret = ioctl(mf->fd, PCICONF_WRITE4_BUFFER, &write4_buf);
+            int ret = ioctl(mf->fd, NNT_WRITE, &write4_buf);
             if (ret < 0) {
                 return -1;
             }
@@ -811,21 +812,15 @@ static int driver_mread4_block(mfile *mf, unsigned int offset, u_int32_t *data, 
         for (left_size = length; left_size > 0; left_size -= PCICONF_MAX_BUFFER_SIZE) {
             int toread = (left_size >= PCICONF_MAX_BUFFER_SIZE) ? PCICONF_MAX_BUFFER_SIZE : left_size;
 
-            struct mst_read4_buffer_st read4_buf;
+            struct rw_operation read4_buf;
             memset(&read4_buf, 0, sizeof(read4_buf));
             read4_buf.address_space = (unsigned int)mf->address_space;
             read4_buf.offset = offset;
             read4_buf.size = toread;
 
-            // We support backward compatibility.
-            // There is a known bug with PCICONF_READ4_BUFFER ioctl and data may be corrupted.
             int ret;
-            if ((ret = ioctl(mf->fd, PCICONF_READ4_BUFFER_EX, &read4_buf)) < 0) {
-                if ((ret = ioctl(mf->fd, PCICONF_READ4_BUFFER, &read4_buf)) < 0) {
-                    if ((ret = ioctl(mf->fd, PCICONF_READ4_BUFFER_BC, &read4_buf)) < 0) {
-                        return -1;
-                    }
-                }
+            if ((ret = ioctl(mf->fd, NNT_READ, &read4_buf)) < 0) {
+                return -1;
             }
             memcpy(dest_ptr, read4_buf.data, toread);
             offset += toread;
@@ -858,6 +853,7 @@ static
 int mtcr_driver_open(mfile *mf, MType dev_type,
                      unsigned domain_p, unsigned bus_p, unsigned dev_p, unsigned func_p)
 {
+    unsigned int connectx_wa_base = 0xf0384;
     int rc = 0;
     ul_ctx_t *ctx = mf->ul_ctx;
     char driver_cr_name[40];
@@ -884,13 +880,14 @@ int mtcr_driver_open(mfile *mf, MType dev_type,
         ctx->mwrite4_block = driver_mwrite4_block;
         ctx->mclose        = mtcr_driver_mclose;
         mf->bar_virtual_addr            = NULL;
-        unsigned int slot_num;
-        rc = ioctl(mf->fd, PCI_CONNECTX_WA, &slot_num);
+        unsigned int slot_num = 1;
+        
+        rc = ioctl(mf->fd, NNT_PCI_CONNECTX_WA, &slot_num);
         if (rc < 0) {
             goto end;
         }
 
-        mf->connectx_wa_slot = CONNECTX_WA_BASE + 4 * slot_num;
+        mf->connectx_wa_slot = connectx_wa_base + 4 * slot_num;
         cr_valid = 1;
         rc = mtcr_check_signature(mf);
 
@@ -918,14 +915,15 @@ end:
         if (mf->fd < 0) {
             return -1;
         }
-        struct mst_params dev_params;
+
+        struct device_parameters dev_params;
         memset(&dev_params, 0, sizeof(dev_params));
-        if (ioctl(mf->fd, MST_PARAMS, &dev_params) < 0) {
+        if (ioctl(mf->fd, NNT_GET_DEVICE_PARAMETERS, &dev_params) < 0) {
             fprintf(stderr, "-E- Failed to get Device PARAMS!\n");
             return -1;
         }
-        mf->vsec_supp = (int)dev_params.vendor_specific_cap;
-        if (dev_params.vendor_specific_cap) {
+        mf->vsec_supp = (int)dev_params.vendor_specific_capability;
+        if (dev_params.vendor_specific_capability) {
             mf->address_space = CR_SPACE_DOMAIN;
             mf->vsec_cap_mask |= ((1 << VCC_INITIALIZED) | (1 << VCC_SEMAPHORE_SPACE_SUPPORTED) |
                                   (1 << VCC_CRSPACE_SPACE_SUPPORTED) | (1 << VCC_ICMD_SPACE_SUPPORTED) |
@@ -2883,6 +2881,7 @@ int maccess_reg_ul(mfile *mf,
 
     // Fallback - Attempting SMP as last resort.
     if (supports_reg_access_smp(mf)) {
+        class_to_use = MAD_CLASS_REG_ACCESS;
         rc = mreg_send_raw(mf, reg_id, reg_method, reg_data, reg_size, r_size_reg, w_size_reg, reg_status);
     } else {
         return ME_REG_ACCESS_NOT_SUPPORTED;
@@ -3469,7 +3468,7 @@ int get_dma_pages(mfile* mf, struct mtcr_page_info* page_info,
     }
 
     // Pin the memory in the kernel space.
-    ret_value = ioctl(mf->fd, PCICONF_GET_DMA_PAGES, page_info);
+    ret_value = ioctl(mf->fd, NNT_GET_DMA_PAGES, page_info);
 
     if (ret_value)
     {
@@ -3505,7 +3504,7 @@ int release_dma_pages(mfile* mf, int page_amount)
 
     page_info.page_amount = page_amount;
 
-    ioctl(mf->fd, PCICONF_RELEASE_DMA_PAGES, &page_info);
+    ioctl(mf->fd, NNT_RELEASE_DMA_PAGES, &page_info);
     
     // Free the user space memory.
     free(mf->user_page_list.page_list);
@@ -3538,7 +3537,7 @@ int read_dword_from_conf_space(mfile *mf, u_int32_t offset, u_int32_t* data)
     read_config_space.data = 0;
 
     // Read from the configuration space.
-    ret = ioctl(mf->fd, PCICONF_READ_DWORD_FROM_CONFIG_SPACE, &read_config_space);
+    ret = ioctl(mf->fd, NNT_READ_DWORD_FROM_CONFIG_SPACE, &read_config_space);
     *data = read_config_space.data;
 
     return ret;

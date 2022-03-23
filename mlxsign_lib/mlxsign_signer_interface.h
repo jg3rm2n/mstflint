@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -30,44 +30,48 @@
  * SOFTWARE.
  */
 
-#ifndef AMBER_FIELD_H
-#define AMBER_FIELD_H
+#ifndef USER_MLXSIGN_LIB_MLXSIGN_SIGNER_INTERFACE_H_
+#define USER_MLXSIGN_LIB_MLXSIGN_SIGNER_INTERFACE_H_
 
-#include <iostream>
-#include <common/compatibility.h>
-#include <vector>
+
+#include "mlxsign_lib.h"
 
 using namespace std;
 
-class AmberField {
+/*
+ * Class Signer: interface for various types of signers
+ */
+
+class Signer {
 public:
-    AmberField (const string &uiField, const string &uiValue, bool visible = true);
-    AmberField (const string &uiField, const string &uiValue, u_int32_t fieldIndex, bool visible = true);
-    ~AmberField ();
-
-    friend bool operator<(const AmberField &first, const AmberField &second);
-    friend ostream& operator<<(ostream& os, const AmberField &amberField);
-
-    string getUiField() const;
-    string getUiValue() const;
-    u_int64_t getPrmValue() const;
-    bool isVisible();
-    u_int32_t getFieldIndex() const;
-    static void reset();
-    static string getValueFromFields(const vector<AmberField> &fields, const string &uiField, bool matchUiField = true);
-
-    static u_int32_t _lastFieldIndex;
-    static bool _dataValid;
-
-private:
-    u_int32_t _fieldIndex;
-    string _prmReg;
-    string _prmField;
-    string _uiField;
-    u_int64_t _prmValue;
-    string _uiValue;
-    string _fieldGroup;
-    bool _visible;
+    virtual ~Signer() {};
+    virtual MlxSign::ErrorCode Init() = 0;
+    virtual MlxSign::ErrorCode Sign(const vector<u_int8_t>& msg, vector<u_int8_t>& signature) = 0;
 };
 
-#endif /* AMBER_FIELD_H */
+class MlxSignRSAViaOpenssl : public Signer {
+public:
+    MlxSignRSAViaOpenssl(string privPemFileStr);
+
+    MlxSign::ErrorCode Init();
+    MlxSign::ErrorCode Sign(const vector<u_int8_t>& msg, vector<u_int8_t>& signature);
+
+private:
+    string _privPemFileStr;
+    MlxSign::SHAType _shaType;
+    MlxSignRSA _rsa;
+};
+
+class MlxSignRSAViaHSM : public Signer {
+public:
+    MlxSignRSAViaHSM(string opensslEngine, string opensslKeyID);
+
+    MlxSign::ErrorCode Init();
+    MlxSign::ErrorCode Sign(const vector<u_int8_t>& msg, vector<u_int8_t>& signature);
+
+private:
+    MlxSign::OpensslEngineSigner _engineSigner;
+    string _opensslEngine;
+};
+
+#endif /* USER_MLXSIGN_LIB_MLXSIGN_SIGNER_INTERFACE_H_ */

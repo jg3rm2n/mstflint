@@ -95,8 +95,8 @@ MLNX_DEVICES = [
                dict(name="ConnectX4LX", devid=0x20b, status_config_not_done=(0xb0004, 31)),
                dict(name="ConnectX5", devid=0x20d, status_config_not_done=(0xb5e04, 31)),
                dict(name="BlueField", devid=0x211, status_config_not_done=(0xb5e04, 31)),
-               dict(name="BlueField2", devid=0x214, status_config_not_done=(0xb5e04, 31)),
-               dict(name="BlueField3", devid=0x21c, status_config_not_done=(0xb5e04, 31)),
+               dict(name="BlueField2", devid=0x214, status_config_not_done=(0xb5f04, 31)),
+               dict(name="BlueField3", devid=0x21c, status_config_not_done=(0xb5f04, 31)),
                dict(name="ConnectX6", devid=0x20f, status_config_not_done=(0xb5f04, 31)),
                dict(name="ConnectX6DX", devid=0x212, status_config_not_done=(0xb5f04, 31)),
                dict(name="ConnectX6LX", devid=0x216, status_config_not_done=(0xb5f04, 31)),
@@ -1261,7 +1261,7 @@ def stopDriverSync(driverObj):
         if print_waiting_msg and diffTime > 2:
             print("Waiting for %s to run on all other hosts, press 'ctrl+c' to abort" % PROG)
             print_waiting_msg = False
-        time.sleep(0.5)
+        time.sleep(0.01)
 
     logger.debug('[Timing Test] MH SYNC state is GO')
     if status.fsm_state != SYNC_STATE_GO or status.fsm_sync_type != SYNC_TYPE_FW_RESET:
@@ -1293,7 +1293,7 @@ def stopDriverSync(driverObj):
         if print_waiting_msg and diffTime > 2:
             print("Synchronizing with other hosts...")
             print_waiting_msg = False
-        time.sleep(0.5)
+        time.sleep(0.01)
 
     logger.debug('[Timing Test] MH SYNC done')
 
@@ -1374,6 +1374,12 @@ def resetFlow(device, devicesSD, reset_level, reset_type, cmdLineArgs, mfrl):
         if reset_level == CmdRegMfrl.PCI_RESET:
             # reset PCI
             resetPciAddr(device,devicesSD,driverObj, cmdLineArgs)
+        elif reset_level == CmdRegMfrl.WARM_REBOOT:
+            if SkipMultihostSync or not CmdifObj.isMultiHostSyncSupported():
+                stopDriver(driverObj)
+            else:
+                stopDriverSync(driverObj)
+            rebootMachine()
 
         # Wait for FW to be ready to get ICMD
         try:
@@ -1440,17 +1446,11 @@ def execResLvl(device, devicesSD, reset_level, reset_type, reset_sync, cmdLineAr
 
     if reset_level == mfrl.LIVE_PATCH:
         send_reset_cmd_to_fw(mfrl, reset_level, reset_type)
-    elif reset_level == mfrl.PCI_RESET:
+    elif reset_level in [mfrl.PCI_RESET, mfrl.WARM_REBOOT]:
         if reset_sync == SyncOwner.DRIVER:
             send_reset_cmd_to_fw(mfrl, reset_level, reset_type, reset_sync)
         else:
             resetFlow(device, devicesSD, reset_level, reset_type, cmdLineArgs, mfrl)
-    elif reset_level == mfrl.WARM_REBOOT:
-        send_reset_cmd_to_fw(mfrl, reset_level, reset_type)
-        rebootMachine()
-    elif reset_level == mfrl.COLD_REBOOT:
-        send_reset_cmd_to_fw(mfrl, mfrl.WARM_REBOOT, reset_type)
-        print("-I- Cold reboot required. please power cycle machine to load new FW.")
     else:
         raise RuntimeError("Unknown reset level")
 
@@ -1638,8 +1638,20 @@ def main():
     global DevDBDF
     global FWResetStatusChecker
 
-    if is_uefi_secureboot():                                                # The tool is using sysfs to access PCI config and it's
+    if args.reset_sync == SyncOwner.TOOL and is_uefi_secureboot():        # The tool is using sysfs to access PCI config and it's
         raise RuntimeError("The tool is not supported on UEFI Secure Boot") # restricted on UEFI secure boot
+
+    # Exit in case of virtual-machine (not implemented for FreeBSD and Windows)
+    if command == "reset" and platform.system() == "Linux" and "ppc64" not in platform.machine():
+        rc, out, _ = cmdExec('lscpu')
+        if rc == 0:
+            if "Hypervisor vendor" in out:
+                raise RuntimeError("The tool is not supported on virtual machines")
+        else:
+            logger.debug("Failed to execute 'lscpu' command rc = {0}".format(rc))
+
+
+
 
     if platform.system() == "Linux": # Convert ib-device , net-device to mst-device(mst started) or pci-device
         if IS_MSTFLINT:
@@ -1762,18 +1774,15 @@ def main():
         print("{0} reset level for device, {1}:\n".format(minimal_or_requested , device))
         print("{0}: {1}".format(reset_level,mfrl.reset_level_description(reset_level)))
 
-        if (reset_level == 4):
-            print("\n-W- Note that reset in this level (4) is not supported on multi-host setups and Bluefield devices\n")
 
         AskUser("Continue with reset", yes)
         execResLvl(device, devicesSD, reset_level, reset_type, reset_sync, args, mfrl)
-        if reset_level != CmdRegMfrl.COLD_REBOOT and reset_level != CmdRegMfrl.WARM_REBOOT:
-            if FWResetStatusChecker.GetStatus() == FirmwareResetStatusChecker.FirmwareResetStatusFailed:
-                reset_fsm_register()
-                print("-E- Firmware reset failed, retry operation or reboot machine.")
-                return 1
-            else:
-                print("-I- FW was loaded successfully.")
+        if FWResetStatusChecker.GetStatus() == FirmwareResetStatusChecker.FirmwareResetStatusFailed:
+            reset_fsm_register()
+            print("-E- Firmware reset failed, retry operation or reboot machine.")
+            return 1
+        else:
+            print("-I- FW was loaded successfully.")
     elif command == "reset_fsm_register":
         reset_fsm_register()
         print("-I- FSM register was reset successfully.")

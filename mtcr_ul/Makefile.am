@@ -31,7 +31,7 @@
 #--
 
 # Makefile.am -- Process this file with automake to produce Makefile.in
-AM_CPPFLAGS = -I$(top_srcdir)/include/mtcr_ul -I$(top_srcdir)/common 
+AM_CPPFLAGS = -I$(top_srcdir)/include/mtcr_ul -I$(top_srcdir)/common -I$(top_srcdir)/dev_mgt
 
 pkglib_LIBRARIES = libmtcr_ul.a
 
@@ -51,5 +51,6 @@ libmtcr_ul_a_SOURCES += mtcr_ib_ofed.c
 endif
 
 libraryincludedir=$(includedir)/mstflint
-libraryinclude_HEADERS = $(top_srcdir)/include/mtcr_ul/mtcr.h  $(top_srcdir)/include/mtcr_ul/mtcr_com_defs.h  $(top_srcdir)/include/mtcr_ul/mtcr_mf.h
+libraryinclude_HEADERS = $(top_srcdir)/include/mtcr_ul/mtcr.h  $(top_srcdir)/include/mtcr_ul/mtcr_com_defs.h \
+						 $(top_srcdir)/include/mtcr_ul/mtcr_mf.h $(top_srcdir)/include/mtcr_ul/mst_ioctl_defs.h
 

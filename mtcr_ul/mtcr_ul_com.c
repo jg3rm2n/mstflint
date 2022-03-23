@@ -89,7 +89,7 @@
 #include "packets_layout.h"
 #include "mtcr_tools_cif.h"
 #include "mtcr_icmd_cif.h"
-#include "mst_ioctl_defs.h"
+#include "nnt_ioctl_defs.h"
 
 #define CX3_SW_ID    4099
 #define CX3PRO_SW_ID 4103
@@ -321,14 +321,14 @@ int mtcr_check_signature(mfile *mf)
 int mst_driver_vpd_read4(mfile *mf, unsigned int offset, u_int8_t value[])
 {
     int flag = 0;
-    struct mst_vpd read_vpd4;
+    struct nnt_vpd read_vpd4;
     if (mf->tp != MST_PCICONF) {
         mpci_change_ul(mf);
         flag = 1;
     }
     memset(&read_vpd4, 0, sizeof(read_vpd4));
     read_vpd4.offset = offset;
-    int ret = ioctl(mf->fd, MST_VPD_READ, &read_vpd4);
+    int ret = ioctl(mf->fd, NNT_VPD_READ, &read_vpd4);
     if (ret < 0) {
         return ret;
     }
@@ -686,7 +686,7 @@ int mtcr_driver_mread4(mfile *mf, unsigned int offset, u_int32_t *value)
     r4.address_space = (unsigned int)mf->address_space;
     r4.offset = offset;
     r4.size = 4;
-    if ((ioctl(mf->fd, MST_READ, &r4)) < 0) {
+    if ((ioctl(mf->fd, NNT_READ, &r4)) < 0) {
         rc = -1;
     } else {
         *value = r4.data[0];
@@ -704,7 +704,7 @@ int mtcr_driver_mwrite4(mfile *mf, unsigned int offset, u_int32_t value)
     r4.offset = offset;
     r4.data[0] = value;
     r4.address_space = (unsigned int)mf->address_space;
-    if (ioctl(mf->fd, MST_WRITE, &r4) < 0) {
+    if (ioctl(mf->fd, NNT_WRITE, &r4) < 0) {
         rc = -1;
     } else {
         rc = 4;
@@ -790,7 +790,7 @@ static int driver_mwrite4_block(mfile *mf, unsigned int offset, u_int32_t *data,
             write4_buf.offset = offset;
             write4_buf.size = towrite;
             memcpy(write4_buf.data, dest_ptr, towrite);
-            int ret = ioctl(mf->fd, MST_WRITE, &write4_buf);
+            int ret = ioctl(mf->fd, NNT_WRITE, &write4_buf);
             if (ret < 0) {
                 return -1;
             }
@@ -819,7 +819,7 @@ static int driver_mread4_block(mfile *mf, unsigned int offset, u_int32_t *data, 
             read4_buf.size = toread;
 
             int ret;
-            if ((ret = ioctl(mf->fd, MST_READ, &read4_buf)) < 0) {
+            if ((ret = ioctl(mf->fd, NNT_READ, &read4_buf)) < 0) {
                 return -1;
             }
             memcpy(dest_ptr, read4_buf.data, toread);
@@ -882,7 +882,7 @@ int mtcr_driver_open(mfile *mf, MType dev_type,
         mf->bar_virtual_addr            = NULL;
         unsigned int slot_num = 1;
         
-        rc = ioctl(mf->fd, MST_PCI_CONNECTX_WA, &slot_num);
+        rc = ioctl(mf->fd, NNT_PCI_CONNECTX_WA, &slot_num);
         if (rc < 0) {
             goto end;
         }
@@ -918,7 +918,7 @@ end:
 
         struct device_parameters dev_params;
         memset(&dev_params, 0, sizeof(dev_params));
-        if (ioctl(mf->fd, MST_GET_DEVICE_PARAMETERS, &dev_params) < 0) {
+        if (ioctl(mf->fd, NNT_GET_DEVICE_PARAMETERS, &dev_params) < 0) {
             fprintf(stderr, "-E- Failed to get Device PARAMS!\n");
             return -1;
         }
@@ -3468,7 +3468,7 @@ int get_dma_pages(mfile* mf, struct mtcr_page_info* page_info,
     }
 
     // Pin the memory in the kernel space.
-    ret_value = ioctl(mf->fd, MST_GET_DMA_PAGES, page_info);
+    ret_value = ioctl(mf->fd, NNT_GET_DMA_PAGES, page_info);
 
     if (ret_value)
     {
@@ -3504,7 +3504,7 @@ int release_dma_pages(mfile* mf, int page_amount)
 
     page_info.page_amount = page_amount;
 
-    ioctl(mf->fd, MST_RELEASE_DMA_PAGES, &page_info);
+    ioctl(mf->fd, NNT_RELEASE_DMA_PAGES, &page_info);
     
     // Free the user space memory.
     free(mf->user_page_list.page_list);
@@ -3537,7 +3537,7 @@ int read_dword_from_conf_space(mfile *mf, u_int32_t offset, u_int32_t* data)
     read_config_space.data = 0;
 
     // Read from the configuration space.
-    ret = ioctl(mf->fd, MST_READ_DWORD_FROM_CONFIG_SPACE, &read_config_space);
+    ret = ioctl(mf->fd, NNT_READ_DWORD_FROM_CONFIG_SPACE, &read_config_space);
     *data = read_config_space.data;
 
     return ret;

@@ -52,5 +52,5 @@ endif
 
 libraryincludedir=$(includedir)/mstflint
 libraryinclude_HEADERS = $(top_srcdir)/include/mtcr_ul/mtcr.h  $(top_srcdir)/include/mtcr_ul/mtcr_com_defs.h \
-						 $(top_srcdir)/include/mtcr_ul/mtcr_mf.h $(top_srcdir)/include/mtcr_ul/mst_ioctl_defs.h
+						 $(top_srcdir)/include/mtcr_ul/mtcr_mf.h $(top_srcdir)/include/mtcr_ul/nnt_ioctl_defs.h
 
